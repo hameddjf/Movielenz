@@ -11,15 +11,19 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-
 # import dj_database_url  / not installed
 import os
 from datetime import timedelta
 
+# تغییر ugettext_lazy به gettext_lazy
+# from django.utils import translation
+# translation.ugettext_lazy = translation.gettext_lazy
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# load_dotenv(os.path.join(BASE_DIR, ".env"))
+from dotenv import load_dotenv
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -60,6 +64,8 @@ print(f"settings.py: Calculated ALLOWED_HOSTS: {ALLOWED_HOSTS}")
 INSTALLED_APPS = [
     'jazzmin',
     
+    'django.contrib.sites',
+    
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -73,6 +79,15 @@ INSTALLED_APPS = [
     "episode",
     "user_account",
     
+    'dj_rest_auth',
+    'dj_rest_auth.registration',
+    'rest_framework.authtoken',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.twitter',
+    
     "rest_framework",
     "mptt",
     'rest_framework_simplejwt',
@@ -84,7 +99,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     # 'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -100,7 +118,7 @@ AUTH_USER_MODEL = 'user_account.User'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -126,9 +144,14 @@ DATABASES = {
 }
 
 # DATABASES = {
-#     'default': dj_database_url.config(
-#         default=os.environ.get('DATABASE_URL')
-#     )
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'your_db_name',
+#         'USER': 'your_db_user',
+#         'PASSWORD': 'your_db_password',
+#         'HOST': 'localhost',  # or your db host
+#         'PORT': '5432',       # or your db port
+#     }
 # }
 
 
@@ -208,7 +231,6 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True, 
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',), 
-
 }
 
 REST_FRAMEWORK = {
@@ -216,7 +238,7 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 10,
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication', 
-        'rest_framework.authentication.SessionAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication', 
     ],
     'DEFAULT_PERMISSION_CLASSES': [
@@ -238,6 +260,55 @@ DRF_POLYMORPHIC_SETTINGS = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# smtp email
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_HOST_USER = "hameddjf106@gmail.com"
+# EMAIL_HOST_PASSWORD = "aaas ypux cauw lbho"
+EMAIL_HOST_PASSWORD = "horx cvwb jgex rmrj"
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+# ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+ACCOUNT_EMAIL_VERIFICATION = 'none'
+DEFAULT_FROM_EMAIL = 'MovieLenz Support <movielenz.com>'
+ACCOUNT_EMAIL_SUBJECT_PREFIX = '[MovieLenz]'
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True
+
+
+
+REST_AUTH = {
+    # 'LOGIN_SERIALIZER': 'user_account.serializers.CustomLoginSerializer',
+    'REGISTER_SERIALIZER': 'user_account.serializers.CustomRegisterSerializer',
+    'USE_JWT': True,
+    'JWT_AUTH_HTTPONLY': False,
+    'PASSWORD_RESET_CONFIRM_URL': "/api/user/password/reset/confirm/{uidb64}/{token}/",
+}
+
+# login with account
+
+SITE_ID = 1 # برای کارکرد django.contrib.sites
+
+# برای اینکه جنگو بداند هم با ایمیل لاگین کند و هم از طریق شبکه‌های اجتماعی
+AUTHENTICATION_BACKENDS = (
+    'allauth.account.auth_backends.AuthenticationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+)
+
+# تنظیمات برای غیرفعال کردن ایمیل تاییدیه پس از ثبت‌نام با شبکه‌های اجتماعی (اختیاری)
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'
+SOCIALACCOUNT_EMAIL_REQUIRED = False
+
+# login
+
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+
+
 # jazzmin
 
 JAZZMIN_SETTINGS = {
@@ -246,9 +317,26 @@ JAZZMIN_SETTINGS = {
     "site_brand": "movie",
     "welcome_sign": "خوش امدین به پنل ادمین movie",
     "copyright": "movie",
-    "order_sidebar_by": "movie",
+    # "order_sidebar_by": "movie",
     "show_sidebar": True,
     "show_header": True,
     "navigation_expanded": False,
     "custom_css": "css/custom.css",  # آدرس CSS سفارشی
+}
+
+# if DEBUG:
+#     INSTALLED_APPS += ['debug_toolbar']
+#     MIDDLEWARE.insert(0, 'debug_toolbar.middleware.DebugToolbarMiddleware')
+#     INTERNAL_IPS = [
+#         '127.0.0.1',
+#     ]
+
+# token (access / refresh)
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }

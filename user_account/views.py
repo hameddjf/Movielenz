@@ -2,28 +2,288 @@ import logging
 from urllib.parse import urlparse
 
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 from django.utils.translation import gettext_lazy as _
 from django.urls import resolve, Resolver404
-
+from django.utils.http import urlsafe_base64_decode
+from django.core.mail import send_mail
+from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.decorators import action
-
+from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
+    
 from .models import WatchlistItem, FavoriteItem, RecentlyWatchedItem
+from .tokens import account_activation_token
 from .serializers import (
-    UserRegistrationSerializer, UserProfileSerializer,
-    WatchlistItemSerializer, FavoriteItemSerializer, RecentlyWatchedItemSerializer
+    CustomRegisterSerializer, UserProfileSerializer,
+    WatchlistItemSerializer, FavoriteItemSerializer, RecentlyWatchedItemSerializer,
+    CustomPasswordResetConfirmSerializer,
+)
+# from django.urls import reverse
+User = get_user_model()
+logger = logging.getLogger(__name__)
+# class UserRegistrationView(generics.CreateAPIView):
+#     queryset = User.objects.all()
+#     serializer_class = CustomRegisterSerializer
+#     permission_classes = [AllowAny]
+
+# accounts/views.py
+from dj_rest_auth.views import (
+    LoginView, LogoutView, UserDetailsView, PasswordChangeView,
+    PasswordResetView, PasswordResetConfirmView as BasePasswordResetConfirmView
+)
+from dj_rest_auth.registration.views import (
+    RegisterView
 )
 
-User = get_user_model()
+from .serializers import (
+    CustomRegisterSerializer, CustomUserDetailsSerializer
+)
 
-class UserRegistrationView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserRegistrationSerializer
+# --- ویوهای مربوط به ثبت‌نام و تایید ایمیل ---
+
+
+# class CustomRegisterView(RegisterView):
+#     """
+#     ویوی سفارشی برای ثبت‌نام کاربر با استفاده از ایمیل و رمز عبور.
+
+#     این ویو از `CustomRegisterSerializer` برای افزودن فیلدهای سفارشی
+#     (first_name, last_name, date_of_birth) به فرآیند ثبت‌نام استفاده می‌کند.
+#     پس از ثبت‌نام موفق، در صورتی که تایید ایمیل فعال باشد، یک ایمیل
+#     برای کاربر ارسال خواهد شد.
+#     """
+#     serializer_class = CustomRegisterSerializer
+
+    # def perform_create(self, serializer):
+    #     """
+    #     این متد پس از اعتبارسنجی موفق سریالایزر فراخوانی می‌شود.
+    #     منطق ایجاد کاربر در متد `save` سریالایزر مدیریت شده است.
+    #     """
+    #     user = serializer.save(self.request)
+    #     logger.info(f"کاربر جدید با ایمیل {user.email} با موفقیت ثبت‌نام کرد.")
+    #     return user
+    
+class CustomVerifyEmailView(APIView):
+    def get(self, request, uidb64, token):
+        print("🔗 verify view:", uidb64, token)
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+            print("Found user:", user.email, user.activated)
+        except Exception as e:
+            print("Error decoding UID:", e)
+            return Response({'error': 'لینک نامعتبر'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if account_activation_token.check_token(user, token):
+            user.activated = True
+            user.save()
+            return Response({'success': '✅ تأیید شد'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'لینک منقضی/ناصحیح'}, status=status.HTTP_400_BAD_REQUEST)
+
+# class CustomVerifyEmailView(VerifyEmailView):
+#     """
+#     ویوی سفارشی برای تایید ایمیل کاربر پس از کلیک روی لینک ارسالی.
+
+#     می‌توان با override کردن متد post، منطق سفارشی (مانند اهدای امتیاز به کاربر)
+#     را پس از تایید موفق ایمیل پیاده‌سازی کرد.
+#     """
+#     def post(self, request, *args, **kwargs):
+#         response = super().post(request, *args, **kwargs)
+#         if response.status_code == status.HTTP_200_OK:
+#             # ایمیل با موفقیت تایید شده است.
+#             logger.info(f"ایمیل برای کاربر '{request.user}' با موفقیت تایید شد.")
+#             # در اینجا می‌توانید منطق سفارشی خود را اضافه کنید.
+#             # برای مثال:
+#             # request.user.add_welcome_points()
+#             # request.user.save()
+#             return Response({"detail": "ایمیل شما با موفقیت تایید شد."}, status=status.HTTP_200_OK)
+#         return response
+
+class CustomRegisterView(RegisterView):
+    """
+    ویوی ثبت‌نام که از سریالایزر سفارشی استفاده می‌کند.
+    منطق ارسال ایمیل توسط allauth مدیریت می‌شود.
+    """
+    serializer_class = CustomRegisterSerializer
+
+class ResendEmailVerificationView(generics.GenericAPIView):
+    """
+    ویوی ارسال مجدد ایمیل تأیید برای کاربرانی که ثبت‌نام کرده‌اند.
+    """
     permission_classes = [AllowAny]
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email')
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"detail": "کاربری با این ایمیل وجود ندارد."}, status=status.HTTP_404_NOT_FOUND)
+
+        # ایجاد لینک تأیید
+        token = account_activation_token.make_token(user)
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        activation_link = f"http://{request.get_host()}{reverse('rest_verify_email', kwargs={'uidb64': uidb64, 'token': token})}"
+
+        subject = 'تأیید حساب کاربری'
+        message = f'لطفا برای تأیید حساب خود به لینک زیر مراجعه کنید:\n{activation_link}'
+        send_mail(subject, message, 'hameddjf106@gmail.com', [user.email])
+
+        return Response({"detail": "ایمیل تأیید مجدداً ارسال شد."}, status=status.HTTP_200_OK)
+
+# --- ویوهای مربوط به لاگین، پروفایل و مدیریت رمز عبور ---
+
+class CustomLoginView(LoginView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    def post(self, request, *args, **kwargs):
+        # حالا این پرینت باید اجرا شود
+        print("✅ CustomLoginView.post method has been executed!")
+        logger.info(f"Login attempt with data: {request.data}")
+        
+        email = request.data.get('email', 'نامشخص')
+        logger.info(f"تلاش برای ورود توسط کاربر با ایمیل: {email}")
+
+        response = super().post(request, *args, **kwargs)
+
+        if response.status_code == status.HTTP_200_OK:
+            logger.info(f"ورود موفق برای کاربر با ایمیل: {email}")
+        else:
+            # اگر اینجا رسیدید، یعنی مشکل از اعتبار (credentials) است نه دسترسی (permission)
+            print(f"❌ Login failed inside the view. Response: {response.data}")
+            logger.warning(f"تلاش ناموفق برای ورود با ایمیل: {email}. دلیل: {response.data}")
+            
+        return response
+
+class CustomLogoutView(LogoutView):
+    """
+    ویوی سفارشی برای خروج کاربر.
+
+    این ویو به صراحت فقط متد POST را می‌پذیرد تا از خروج تصادفی کاربر
+    از طریق درخواست‌های GET (مثلاً توسط موتورهای جستجو) جلوگیری شود.
+    یک پیام موفقیت‌آمیز سفارشی نیز در پاسخ بازگردانده می‌شود.
+    """
+    http_method_names = ['post', 'options']
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user_email = request.user.email
+        super().post(request, *args, **kwargs)
+        logger.info(f"کاربر با ایمیل {user_email} با موفقیت خارج شد.")
+        return Response(
+            {"detail": "شما با موفقیت خارج شدید."},
+            status=status.HTTP_200_OK
+        )
+
+class CustomUserDetailsView(UserDetailsView):
+    """
+    ویوی سفارشی برای نمایش و ویرایش اطلاعات کاربر احراز هویت شده.
+
+    این ویو از `CustomUserDetailsSerializer` استفاده می‌کند تا فیلدهای سفارشی
+    مانند `date_of_birth` را نیز در بر بگیرد و امکان ویرایش آن‌ها را فراهم کند.
+    """
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class CustomPasswordChangeView(PasswordChangeView):
+    """
+    ویوی سفارشی برای تغییر رمز عبور توسط کاربر لاگین کرده.
+    پاسخ موفقیت‌آمیز سفارشی‌سازی شده است.
+    """
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            logger.info(f"کاربر {request.user.email} رمز عبور خود را با موفقیت تغییر داد.")
+            return Response({"detail": "رمز عبور شما با موفقیت تغییر یافت."}, status=status.HTTP_200_OK)
+        return response
+
+
+class CustomPasswordResetView(PasswordResetView):
+    """
+    ویوی سفارشی برای ارسال ایمیل بازیابی رمز عبور.
+    """
+
+    def post(self, request, *args, **kwargs):
+        logger.debug(f"داده های ورودی: {request.data}")
+        email_address = request.data.get('email')
+        if not email_address:
+            logger.warning("ایمیل در داده های ورودی یافت نشد.")
+            return Response(
+                {"detail": "لطفا ایمیل خود را وارد کنید."},
+                status=status.HTTP_400_BAD_REQUEST)
+        try:
+            response = super().post(request, *args, **kwargs)
+            if response.status_code == status.HTTP_200_OK:
+                logger.info(f"ایمیل بازیابی رمز عبور برای {email_address} ارسال شد (طبق پاسخ super()).")
+                return Response(
+                    {"detail": "ایمیل بازیابی رمز عبور برای شما ارسال شد. لطفاً صندوق ورودی خود را بررسی کنید."},
+                    status=status.HTTP_200_OK)
+            else:
+                logger.error(f"خطا در ارسال ایمیل بازیابی رمز عبور توسط super().post(). کد وضعیت: {response.status_code}. پاسخ: {response.data}")
+                return response
+        except Exception as e:
+            logger.exception(f"خطای غیرمنتظره در هنگام پردازش بازیابی رمز عبور: {e}")
+            return Response(
+                {"detail": "یک خطای داخلی رخ داده است. لطفاً بعداً دوباره امتحان کنید."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class CustomPasswordResetConfirmView(BasePasswordResetConfirmView):
+    """
+    ویوی سفارشی برای تأیید و نهایی کردن فرآیند بازنشانی رمز عبور.
+    (نسخه اصلاح شده و نهایی)
+    """
+    serializer_class = CustomPasswordResetConfirmSerializer
+
+    def post(self, request, *args, **kwargs):
+        """
+        پردازش درخواست POST برای تنظیم رمز عبور جدید.
+        """
+        logger.debug(f"درخواست تأیید بازنشانی رمز عبور دریافت شد. UID: {kwargs.get('uidb64')}")
+
+        # ======================= شروع بخش اصلاح شده =======================
+
+        # 1. یک کپی از داده‌های Body درخواست (new_password1, new_password2) تهیه می‌کنیم.
+        serializer_data = request.data.copy()
+
+        # 2. مقادیر uid و token را از پارامترهای URL (kwargs) به داده‌های سریالایزر اضافه می‌کنیم.
+        #    سریالایزر dj_rest_auth انتظار فیلدی به نام 'uid' دارد، نه 'uidb64'.
+        serializer_data['uid'] = kwargs.get('uidb64')
+        serializer_data['token'] = kwargs.get('token')
+
+        # 3. حالا سریالایزر را با داده‌های کامل (هم Body و هم URL) نمونه‌سازی می‌کنیم.
+        serializer = self.get_serializer(data=serializer_data)
+
+        # ======================== پایان بخش اصلاح شده ========================
+
+        try:
+            # اعتبارسنجی داده‌ها. حالا سریالایزر هم رمزها را چک می‌کند و هم توکن را.
+            serializer.is_valid(raise_exception=True)
+            
+            # ذخیره رمز عبور جدید
+            serializer.save()
+            
+            logger.info(f"رمز عبور برای کاربر با UID: {kwargs.get('uidb64')} با موفقیت تغییر یافت.")
+            return Response(
+                {"detail": "رمز عبور شما با موفقیت تغییر یافت."},
+                status=status.HTTP_200_OK
+            )
+
+        except ValidationError as e:
+            logger.warning(f"خطای اعتبارسنجی در تأیید بازنشانی رمز عبور: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.exception(f"خطای غیرمنتظره در هنگام تأیید بازنشانی رمز عبور: {e}")
+            return Response(
+                {"detail": "یک خطای داخلی در سرور رخ داده است. لطفاً بعداً دوباره تلاش کنید."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer

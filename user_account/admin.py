@@ -10,20 +10,47 @@ from .models import User, WatchlistItem, FavoriteItem, RecentlyWatchedItem
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     list_display = (
-        'email', 'first_name', 'last_name', 'is_staff', 
-        'subscription_status', 'has_active_premium_subscription_display', 'date_joined'
+        'email', 
+        'get_full_name',
+        'activated',
+        'is_staff', 
+        'subscription_status', 
+        'has_active_premium_subscription_display', 
+        'date_joined'
     )
-    list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups', 'subscription_status', 'preferred_language')
+    list_filter = ('is_staff','activated', 'is_superuser', 'groups', 'subscription_status', 'preferred_language')
     search_fields = ('email', 'first_name', 'last_name')
-    ordering = ('email',)
+    filter_horizontal = ('groups', 'user_permissions', 'preferred_genres')
+    ordering = ('email','activated')
+    
+    actions = ['activate_users', 'deactivate_users', 'grant_premium']
+
+    def activate_users(self, request, queryset):
+        queryset.update(activated=True)
+    activate_users.short_description = "فعال‌سازی حساب کاربران انتخاب شده"
+
+    def deactivate_users(self, request, queryset):
+        queryset.update(activated=False)
+    deactivate_users.short_description = "غیرفعال‌سازی حساب کاربران انتخاب شده"
+
+    def grant_premium(self, request, queryset):
+        from datetime import timedelta
+        from django.utils import timezone
+        end_date = timezone.now() + timedelta(days=30)
+        queryset.update(
+            subscription_status='PREMIUM',
+            subscription_start_date=timezone.now(),
+            subscription_end_date=end_date
+        )
+    grant_premium.short_description = "اعطای اشتراک ویژه ۳۰ روزه"
     
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        (_('اطلاعات شخصی'), {'fields': ('first_name', 'last_name', 'profile_picture_display', 'profile_picture', 'date_of_birth')}),
+        (_('اطلاعات شخصی'), {'fields': ("username",'first_name',"last_name", 'profile_picture_display', 'profile_picture', 'date_of_birth')}),
         (_('وضعیت اشتراک'), {'fields': ('subscription_status', 'subscription_start_date', 'subscription_end_date')}),
         (_('تنظیمات برگزیده'), {'fields': ('preferred_language', 'preferred_genres')}),
         (_('دسترسی‌ها'), {
-            'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
+            'fields': ('activated', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
         }),
         (_('تاریخ‌های مهم'), {'fields': ('last_login', 'date_joined')}),
     )
@@ -32,7 +59,7 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'first_name', 'last_name', 'password', 'password2'),
+            'fields': ('email', 'password', 'password2'),
         }),
     )
     def profile_picture_display(self, obj):

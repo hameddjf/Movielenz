@@ -17,3 +17,4 @@ load_dotenv()
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'movie.settings')
 
 application = get_wsgi_application()
+

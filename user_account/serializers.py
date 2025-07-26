@@ -1,4 +1,13 @@
 # accounts/serializers.py
+from dj_rest_auth.registration.serializers import RegisterSerializer
+from dj_rest_auth.serializers import UserDetailsSerializer, PasswordResetConfirmSerializer as BasePasswordResetConfirmSerializer
+from django.conf import settings
+from django.core.mail import send_mail
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
@@ -6,13 +15,19 @@ from django.urls import resolve, Resolver404, reverse, NoReverseMatch
 from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from django.contrib.auth import authenticate
+
 from urllib.parse import urlparse
 
 from rest_framework import serializers
 
 from .models import WatchlistItem, FavoriteItem, RecentlyWatchedItem, User
+from .tokens import account_activation_token
 
 from movielenz.models import Genre
+
+import logging
+logger = logging.getLogger(__name__)
 
 class BaseContentSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
@@ -42,28 +57,199 @@ class ContentObjectRelatedField(serializers.RelatedField):
         raise NotImplementedError("Direct assignment to content_object is not supported via this field.")
 
 
-class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
-    password2 = serializers.CharField(write_only=True, required=True, label=_("Confirm password"), style={'input_type': 'password'})
+# class UserRegistrationSerializer(serializers.ModelSerializer):
+#     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+#     # password2 = serializers.CharField(write_only=True, required=False, label=_("Confirm password"))
 
-    class Meta:
-        model = User
-        fields = ('email', 'first_name', 'last_name', 'password', 'password2', 'date_of_birth')
-        extra_kwargs = {
-            'first_name': {'required': True},
-            'last_name': {'required': True},
-        }
+#     class Meta:
+#         model = User
+#         fields = ('email', 'first_name', 'last_name', 'password', 'date_of_birth')
+#         extra_kwargs = {
+#             'first_name': {'required': False},
+#             'last_name': {'required': False},
+#             'date_of_birth': {'required': False, 'allow_null': True},
+#         }
+
+#     # def validate(self, attrs):
+#     #     if attrs['password2'] != attrs['password']:
+#     #         raise serializers.ValidationError({"password2": _("Password2 fields didn't match.")})
+#     #     return attrs
+
+#     def create(self, validated_data):
+#         """
+#         این متد برای اطمینان از هش شدن صحیح رمز عبور ضروری است.
+#         """
+#         user = User.objects.create_user(
+#             email=validated_data['email'],
+#             password=validated_data['password'],
+#             first_name=validated_data.get('first_name', ''),
+#             last_name=validated_data.get('last_name', ''),
+#             date_of_birth=validated_data.get('date_of_birth')
+#         )
+#         return user
+
+
+# class CustomRegisterSerializer(RegisterSerializer):
+#     first_name = serializers.CharField(max_length=30, required=False)
+#     last_name = serializers.CharField(max_length=30, required=False)
+#     date_of_birth = serializers.DateField(required=False, allow_null=True)
+
+#     def get_cleaned_data(self):
+#         # داده‌های اصلی (ایمیل، پسورد) را از کلاس پدر دریافت کنید
+#         data = super().get_cleaned_data()
+#         # فیلدهای سفارشی خود را به آن اضافه کنید
+#         data.update({
+#             'first_name': self.validated_data.get('first_name', ''),
+#             'last_name': self.validated_data.get('last_name', ''),
+#             'date_of_birth': self.validated_data.get('date_of_birth', None),
+#         })
+#         return data
+
+#     def save(self, request):
+#         # متد save کلاس پدر را فراخوانی کنید تا کاربر ایجاد شود
+#         user = super().save(request)
+#         # فیلدهای اضافی را به کاربر اختصاص دهید
+#         user.first_name = self.validated_data.get('first_name', '')
+#         user.last_name = self.validated_data.get('last_name', '')
+#         user.date_of_birth = self.validated_data.get('date_of_birth', None)
+#         user.save()
+#         return user
+
+class ResendEmailVerificationSerializer(serializers.Serializer):
+    """
+    سریالایزر برای اعتبارسنجی ایمیل ورودی جهت ارسال مجدد لینک تایید.
+    """
+    email = serializers.EmailField(required=True)
+class PasswordResetEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+class CustomPasswordResetConfirmSerializer(BasePasswordResetConfirmSerializer):
+    """
+    سریالایزر سفارشی برای تأیید بازنشانی رمز عبور.
+    این سریالایزر وظیفه اعتبارسنجی رمز عبور جدید و تکرار آن را بر عهده دارد.
+    """
+    # می‌توانیم پیام‌های خطا را در اینجا شخصی‌سازی کنیم، اما برای شروع،
+    # استفاده از مقادیر پیش‌فرض dj_rest_auth کافی و استاندارد است.
+    # به عنوان مثال، اگر بخواهیم فیلدها را بازنویسی کنیم:
+    # new_password1 = serializers.CharField(max_length=128, write_only=True, required=True)
+    # new_password2 = serializers.CharField(max_length=128, write_only=True, required=True)
+
+    def save(self):
+        # متد save در کلاس والد (BasePasswordResetConfirmSerializer)
+        # به طور کامل منطق تغییر رمز عبور را مدیریت می‌کند.
+        # این متد از طریق context که توسط ویو فراهم می‌شود به request دسترسی دارد
+        # و کاربر را از آن استخراج کرده و رمز عبور جدید را برایش تنظیم می‌کند.
+        # بنابراین نیازی به بازنویسی این متد نیست مگر اینکه بخواهیم رفتار خاصی اضافه کنیم.
+        return super().save()
+
+class CustomLoginSerializer(serializers.Serializer): # دیگر از LoginSerializer ارث‌بری نمی‌کنیم
+    username = None # اطمینان از اینکه فیلد username وجود ندارد
+    email = serializers.EmailField(required=True, write_only=True)
+    password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'})
 
     def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({"password": _("Password fields didn't match.")})
+        email = attrs.get('email')
+        password = attrs.get('password')
+        request = self.context.get('request')
+
+        if not email or not password:
+            raise serializers.ValidationError(_('Must include "email" and "password".'), code='authorization')
+
+        print(f"✅ CustomLoginSerializer.validate is running for email: {email}")
+        logger.info(f"Serializer validation attempt for email: {email}")
+
+        # فراخوانی مستقیم authenticate با پارامترهای صحیح (email و password)
+        # بک‌اند allauth این پارامترها را دریافت و پردازش خواهد کرد
+        user = authenticate(request=request, email=email, password=password)
+
+        if not user:
+            # اگر authenticate نتواند کاربر را پیدا کند، None برمی‌گرداند
+            print(f"❌ Authentication failed for email: {email}. authenticate() returned None.")
+            logger.warning(f"Authentication failed for {email}. User not found or password incorrect.")
+            raise serializers.ValidationError(_('Unable to log in with provided credentials.'), code='authorization')
+
+        # بررسی اینکه آیا کاربر مجاز به ورود است (مثلاً غیرفعال نشده باشد)
+        if not user.activated:
+            print(f"❌ Authentication failed for email: {email}. User is inactive.")
+            logger.warning(f"Authentication failed for {email}. User account is inactive.")
+            raise serializers.ValidationError(_('User account is disabled.'), code='authorization')
+        
+        # اگر همه چیز موفقیت‌آمیز بود، کاربر احراز هویت شده را در attrs قرار می‌دهیم
+        # تا LoginView بتواند از آن برای ایجاد توکن استفاده کند.
+        attrs['user'] = user
+        print(f"✅ Authentication successful for email: {email}")
+        logger.info(f"Authentication successful for {email} in serializer.")
         return attrs
 
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        user = User.objects.create_user(**validated_data)
-        return user
 
+class CustomRegisterSerializer(RegisterSerializer):
+    """
+    سریالایزر سفارشی برای ثبت‌نام کاربر که به طور کامل مستقل عمل می‌کند.
+    """
+    # فیلدهای غیر ضروری را حذف می‌کنیم
+    username = None
+    password1 = None
+    password2 = None
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+
+    # فیلدهای سفارشی خود را تعریف می‌کنیم
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        """
+        این متد را برای حذف اعتبارسنجی password2 نگه می‌داریم.
+        """
+        # با برگرداندن مستقیم attrs، از اعتبارسنجی والد صرف نظر می‌کنیم.
+        return attrs
+
+    def save(self, request):
+        """
+        متد save را به طور کامل بازنویسی می‌کنیم تا کنترل ایجاد کاربر را در دست بگیریم
+        و از خطای AttributeError مربوط به allauth جلوگیری کنیم.
+        """
+        data = self.validated_data
+        email = self.validated_data.get('email')
+        password = self.validated_data.get('password')
+
+        first_name = self.validated_data.get('first_name', '')
+        last_name = self.validated_data.get('last_name', '')
+        date_of_birth = self.validated_data.get('date_of_birth', None)
+
+        user = User.objects.create_user(
+            username=email,  # یا هر مقدار یکتای دیگر
+            password=data['password'],
+            email=email,
+        )
+        
+        subject = 'تأیید حساب کاربری'
+        message = f'لطفا برای تأیید حساب خود به لینک زیر مراجعه کنید:\n' f'http://{request.get_host()}{reverse("rest_verify_email", kwargs={"uidb64": urlsafe_base64_encode(force_bytes(user.pk)), "token": account_activation_token.make_token(user)})}'
+        send_mail(subject, message, 'hameddjf106@gmail.com', [user.email])
+        token = account_activation_token.make_token(user)
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        activation_link = f"http://{request.get_host()}{reverse('rest_verify_email', kwargs={'uidb64': uidb64, 'token': token})}"
+        print("Activation link:", activation_link)
+        # تنظیم مقادیر فیلدهای سفارشی
+        user.first_name = first_name
+        user.last_name = last_name
+        user.date_of_birth = date_of_birth
+        user.save()
+
+        return user
+    
+class CustomUserDetailsSerializer(UserDetailsSerializer):
+    """
+    سریالایزر سفارشی برای نمایش و ویرایش اطلاعات کاربر.
+    این سریالایزر فیلدهای سفارشی مدل User را در پاسخ API پروفایل کاربر
+    (user-details) نمایش داده و امکان ویرایش آن‌ها را فراهم می‌کند.
+    """
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+
+    class Meta(UserDetailsSerializer.Meta):
+        # فیلدهای کلاس پدر را به ارث برده و فیلد جدید را اضافه می‌کنیم.
+        fields = UserDetailsSerializer.Meta.fields + ('date_of_birth',)
+        read_only_fields = (settings.ACCOUNT_EMAIL_VERIFICATION,)
 
 class UserProfileSerializer(serializers.ModelSerializer):
     preferred_genre_ids = serializers.PrimaryKeyRelatedField(
@@ -91,7 +277,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'email', 'first_name', 'last_name', 'profile_picture', 
+            'id', 'email', 'first_name', 'last_name','activated', 'profile_picture', 
             'date_of_birth', 'subscription_status', 'subscription_end_date',
             'preferred_language', 'preferred_genres_display',
             'preferred_genres_hyperlinks','preferred_genre_ids',

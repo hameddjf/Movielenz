@@ -15,8 +15,21 @@ from .enums import SubscriptionStatus
 from movielenz.models import Genre
 
 class User(AbstractUser):
-    username = None
+    username = models.CharField(
+        _('نام کاربری'),
+        max_length=150,
+        unique=True,
+        help_text=_('یک نام کاربری منحصر به فرد برای ورود به سیستم.'),
+        error_messages={
+            'unique': _("یک کاربر با این نام کاربری وجود دارد."),
+        },
+    )
     email = models.EmailField(_('آدرس ایمیل'), unique=True)
+    activated = models.BooleanField(
+        _('فعال شده'),
+        default=False,
+        help_text=_('وضعیت فعال‌سازی حساب کاربری. اگر غیرفعال باشد، کاربر نمی‌تواند وارد سیستم شود.')
+    )
     first_name = models.CharField(_('نام'), max_length=150, blank=True)
     last_name = models.CharField(_('نام خانوادگی'), max_length=150, blank=True)
     
