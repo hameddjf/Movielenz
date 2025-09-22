@@ -34,6 +34,8 @@ urlpatterns = [
     path("", include("episode.urls")),
     path("", include("movielenz.urls", namespace='cinema-api')),
     path("", include("user_account.urls")),
+    path("", include("blog.urls")),
+    
     # path('api/auth/', include('dj_rest_auth.urls')),
     # path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
     

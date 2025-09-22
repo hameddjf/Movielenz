@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "celebrity",
     "episode",
     "user_account",
+    "blog",
     
     'dj_rest_auth',
     'dj_rest_auth.registration',
@@ -340,3 +341,5 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
 }
+
+CORS_ALLOW_ALL_ORIGINS = True
