@@ -1,0 +1,12 @@
+<div class="tag-cloud">
+    <h4>برچسب‌ها</h4>
+    <ul>
+        {% for tag in tags %}
+            <li>
+                <a href="#">{{ tag.name }}</a>
+            </li>
+        {% empty %}
+            <li>هیچ برچسبی یافت نشد.</li>
+        {% endfor %}
+    </ul>
+</div>
