@@ -9,16 +9,11 @@ from .models import User, WatchlistItem, FavoriteItem, RecentlyWatchedItem
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = (
-        'email', 
-        'get_full_name',
-        'activated',
-        'is_staff', 
-        'subscription_status', 
-        'has_active_premium_subscription_display', 
-        'date_joined'
-    )
-    list_filter = ('is_staff','activated', 'is_superuser', 'groups', 'subscription_status', 'preferred_language')
+    list_display = ('email', 'get_full_name', 'role', 'activated', 'is_staff_display', 
+                    'is_superuser_display','subscription_status', 'has_active_premium_subscription_display',  'date_joined')
+    
+    list_filter = ('activated',  'groups', 'subscription_status', 'preferred_language', 'role', 'date_joined')
+    
     search_fields = ('email', 'first_name', 'last_name')
     filter_horizontal = ('groups', 'user_permissions', 'preferred_genres')
     ordering = ('email','activated')
@@ -50,11 +45,12 @@ class UserAdmin(BaseUserAdmin):
         (_('وضعیت اشتراک'), {'fields': ('subscription_status', 'subscription_start_date', 'subscription_end_date')}),
         (_('تنظیمات برگزیده'), {'fields': ('preferred_language', 'preferred_genres')}),
         (_('دسترسی‌ها'), {
-            'fields': ('activated', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
+            'fields': ('activated','role', ('is_staff_display', 'is_superuser_display'), 'groups', 'user_permissions'),
+                    
         }),
         (_('تاریخ‌های مهم'), {'fields': ('last_login', 'date_joined')}),
     )
-    readonly_fields = ('last_login', 'date_joined', 'profile_picture_display')
+    readonly_fields = ('last_login', 'date_joined', 'profile_picture_display' , 'is_staff_display', 'is_superuser_display')
 
     add_fieldsets = (
         (None, {
@@ -67,6 +63,16 @@ class UserAdmin(BaseUserAdmin):
             return format_html('<img src="{}" width="150" height="auto" />', obj.profile_picture.url)
         return _("عکسی آپلود نشده است")
     profile_picture_display.short_description = _("نمایش عکس پروفایل")
+    
+    def is_staff_display(self, obj):
+        return obj.is_staff
+    is_staff_display.boolean = True
+    is_staff_display.short_description = _('Staff status')
+
+    def is_superuser_display(self, obj):
+        return obj.is_superuser
+    is_superuser_display.boolean = True
+    is_superuser_display.short_description = _('Superuser status')
 
     def has_active_premium_subscription_display(self, obj):
         return obj.has_active_premium_subscription()

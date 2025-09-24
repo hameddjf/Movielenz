@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "episode",
     "user_account",
     "blog",
+    "panel",
     
     'dj_rest_auth',
     'dj_rest_auth.registration',

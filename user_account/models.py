@@ -10,15 +10,17 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from .managers import UserManager
-from .enums import SubscriptionStatus
+from .enums import SubscriptionStatus , UserRole
 
 from movielenz.models import Genre
+
+
 
 class User(AbstractUser):
     username = models.CharField(
         _('نام کاربری'),
         max_length=150,
-        unique=True,
+        unique=False,
         help_text=_('یک نام کاربری منحصر به فرد برای ورود به سیستم.'),
         error_messages={
             'unique': _("یک کاربر با این نام کاربری وجود دارد."),
@@ -111,6 +113,41 @@ class User(AbstractUser):
     REQUIRED_FIELDS = ['first_name', 'last_name']
 
     objects = UserManager()
+    
+    role = models.CharField(
+        _('نقش کاربری'),
+        max_length=20,
+        choices=UserRole.choices,
+        default=UserRole.NORMAL_USER,
+        help_text=_('نقش کاربر در سیستم را مشخص می‌کند.')
+    )
+    
+    # یک property برای سازگاری با IsAdminUser جنگو اضافه می‌کنیم
+    @property
+    def is_staff(self):
+        "Is the user a member of staff?"
+        return self.role in [UserRole.ADMIN, UserRole.OWNER]
+
+    @is_staff.setter
+    def is_staff(self, value):
+        if value:
+            # اگر is_staff برابر True قرار داده شود، نقش کاربر را به ADMIN تغییر دهید
+            # یا می توانید بر اساس نیاز خود نقش دیگری را تعیین کنید
+            if self.role not in [UserRole.ADMIN, UserRole.OWNER]:
+                self.role = UserRole.ADMIN
+        # اگر value برابر False باشد، کاری انجام ندهید، چون نقش کاربر را داریم
+        # و is_staff بر اساس آن تعیین می شود.
+
+    # همچنین می توانید is_superuser را نیز به همین شکل تنظیم کنید
+    @property
+    def is_superuser(self):
+        return self.role in [UserRole.OWNER]
+
+    @is_superuser.setter
+    def is_superuser(self, value):
+        if value:
+            if self.role != UserRole.OWNER:
+                self.role = UserRole.OWNER
 
     class Meta:
         verbose_name = _('کاربر')
