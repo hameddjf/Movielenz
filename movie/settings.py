@@ -80,6 +80,8 @@ INSTALLED_APPS = [
     "user_account",
     "blog",
     "panel",
+    'comment',
+    'reactions',
     
     'dj_rest_auth',
     'dj_rest_auth.registration',
@@ -98,6 +100,7 @@ INSTALLED_APPS = [
     'polymorphic',       
     'drf_polymorphic',
     'django_filters',
+    'pytest_django',
 ]
 
 MIDDLEWARE = [
@@ -228,8 +231,8 @@ LOGGING = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=10), 
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=10), 
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1000), 
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1000), 
     'ROTATE_REFRESH_TOKENS': True, 
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',), 
@@ -237,7 +240,7 @@ SIMPLE_JWT = {
 
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 20,
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication', 
         # 'rest_framework.authentication.SessionAuthentication',
@@ -246,11 +249,19 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ],
-    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.OrderingFilter',
+        'rest_framework.filters.SearchFilter',
+    ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 SPECTACULAR_SETTINGS = {
+    'TITLE': 'Comment API Documentation',
+    'DESCRIPTION': 'A comprehensive API for the comment system.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
 }
 DRF_POLYMORPHIC_SETTINGS = {
@@ -336,7 +347,7 @@ JAZZMIN_SETTINGS = {
 # token (access / refresh)
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     
     'ROTATE_REFRESH_TOKENS': True,

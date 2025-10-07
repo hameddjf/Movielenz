@@ -238,18 +238,18 @@ class CustomRegisterSerializer(RegisterSerializer):
 
         return user
     
-class CustomUserDetailsSerializer(UserDetailsSerializer):
-    """
-    سریالایزر سفارشی برای نمایش و ویرایش اطلاعات کاربر.
-    این سریالایزر فیلدهای سفارشی مدل User را در پاسخ API پروفایل کاربر
-    (user-details) نمایش داده و امکان ویرایش آن‌ها را فراهم می‌کند.
-    """
-    date_of_birth = serializers.DateField(required=False, allow_null=True)
+# class CustomUserDetailsSerializer(UserDetailsSerializer):
+#     """
+#     سریالایزر سفارشی برای نمایش و ویرایش اطلاعات کاربر.
+#     این سریالایزر فیلدهای سفارشی مدل User را در پاسخ API پروفایل کاربر
+#     (user-details) نمایش داده و امکان ویرایش آن‌ها را فراهم می‌کند.
+#     """
+#     date_of_birth = serializers.DateField(required=False, allow_null=True)
 
-    class Meta(UserDetailsSerializer.Meta):
-        # فیلدهای کلاس پدر را به ارث برده و فیلد جدید را اضافه می‌کنیم.
-        fields = UserDetailsSerializer.Meta.fields + ('date_of_birth',)
-        read_only_fields = (settings.ACCOUNT_EMAIL_VERIFICATION,)
+#     class Meta(UserDetailsSerializer.Meta):
+#         # فیلدهای کلاس پدر را به ارث برده و فیلد جدید را اضافه می‌کنیم.
+#         fields = UserDetailsSerializer.Meta.fields + ('date_of_birth',)
+#         read_only_fields = (settings.ACCOUNT_EMAIL_VERIFICATION,)
 
 class UserProfileSerializer(serializers.ModelSerializer):
     preferred_genre_ids = serializers.PrimaryKeyRelatedField(

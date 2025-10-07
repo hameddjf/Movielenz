@@ -121,16 +121,11 @@ class Movie(PolymorphicModel):
     class Meta:
         verbose_name = _("فیلم")
         verbose_name_plural = _("فیلم‌ها")
+        ordering = ['-release_date', 'title']
 
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.title, allow_unicode=True)
-
-        if self.__class__ == Movie and not self.type_id: 
-            movie_type_obj, created = Type.objects.get_or_create(
-                slug='movie',
-            )
-            self.type = movie_type_obj
         super().save(*args, **kwargs)
         
     def __str__(self):
@@ -163,9 +158,8 @@ class Series(Movie):
         
 
     def save(self, *args, **kwargs):
-        series_type_obj, created = Type.objects.get_or_create(
-            slug='series', 
-        )
-        self.type = series_type_obj
-        super(Series, self).save(*args, **kwargs)
+        if not self.type_id:
+            series_type_obj, _ = Type.objects.get_or_create(slug='series', defaults={'name': 'سریال'})
+            self.type = series_type_obj
+        super().save(*args, **kwargs)
 

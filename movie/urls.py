@@ -36,6 +36,8 @@ urlpatterns = [
     path("", include("user_account.urls")),
     path("", include("blog.urls")),
     path('', include('panel.urls')),
+    path('', include('comment.urls')),
+    path('', include('reactions.urls')),
     
     # path('api/auth/', include('dj_rest_auth.urls')),
     # path('api/auth/registration/', include('dj_rest_auth.registration.urls')),

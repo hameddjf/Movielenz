@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import CombinedEpisodeQualityViewSet # مسیر view خود را تنظیم کنید
 
 router = DefaultRouter()
-router.register(r'episodes', CombinedEpisodeQualityViewSet, basename='combined-episode-quality')
+router.register(r'episode', CombinedEpisodeQualityViewSet, basename='combined-episode-quality')
 
 urlpatterns = [
     path('', include(router.urls)),

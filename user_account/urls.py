@@ -13,7 +13,7 @@ from .views import (
     CustomRegisterView,
     CustomLoginView,
     CustomLogoutView,
-    CustomUserDetailsView,
+    # CustomUserDetailsView,
     CustomPasswordChangeView,
     CustomPasswordResetView,
     CustomVerifyEmailView,
@@ -28,6 +28,8 @@ router.register(r'history', RecentlyWatchedViewSet, basename='recentlywatched')
 
 urlpatterns = [
     # path('register/', UserRegistrationView.as_view(), name='user-register'),
+    
+    # مدیریت پروفایل کاربر
     path('me/', UserProfileView.as_view(), name='user-profile'),
     
     # path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -44,8 +46,8 @@ urlpatterns = [
     path('login/', CustomLoginView.as_view(), name='rest_login'),
     path('logout/', CustomLogoutView.as_view(), name='rest_logout'),
 
-    # مدیریت پروفایل کاربر
-    path('user/', CustomUserDetailsView.as_view(), name='rest_user_details'),
+    #  کاربر
+    # path('user/', CustomUserDetailsView.as_view(), name='rest_user_details'),
 
     # مدیریت رمز عبور
     path('password/change/', CustomPasswordChangeView.as_view(), name='rest_password_change'),

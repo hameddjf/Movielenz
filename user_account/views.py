@@ -42,7 +42,8 @@ from dj_rest_auth.registration.views import (
 )
 
 from .serializers import (
-    CustomRegisterSerializer, CustomUserDetailsSerializer
+    CustomRegisterSerializer,
+    # CustomUserDetailsSerializer
 )
 
 # --- ویوهای مربوط به ثبت‌نام و تایید ایمیل ---
@@ -180,15 +181,15 @@ class CustomLogoutView(LogoutView):
             status=status.HTTP_200_OK
         )
 
-class CustomUserDetailsView(UserDetailsView):
-    """
-    ویوی سفارشی برای نمایش و ویرایش اطلاعات کاربر احراز هویت شده.
+# class CustomUserDetailsView(UserDetailsView):
+#     """
+#     ویوی سفارشی برای نمایش و ویرایش اطلاعات کاربر احراز هویت شده.
 
-    این ویو از `CustomUserDetailsSerializer` استفاده می‌کند تا فیلدهای سفارشی
-    مانند `date_of_birth` را نیز در بر بگیرد و امکان ویرایش آن‌ها را فراهم کند.
-    """
-    serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsAuthenticated]
+#     این ویو از `CustomUserDetailsSerializer` استفاده می‌کند تا فیلدهای سفارشی
+#     مانند `date_of_birth` را نیز در بر بگیرد و امکان ویرایش آن‌ها را فراهم کند.
+#     """
+#     serializer_class = CustomUserDetailsSerializer
+#     permission_classes = [IsAuthenticated]
 
 
 class CustomPasswordChangeView(PasswordChangeView):

@@ -13,8 +13,7 @@ from .models import Genre,  Movie, Type
 from .serializers import (
     GenreSerializer,  BaseMovieSerializer
     )
-from .managers import MovieManager 
-
+from .mixins import MovieAPIMixin
 
 class GenreViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -32,52 +31,17 @@ class GenreViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ['name', 'slug']
     ordering_fields = ['name'] 
 
-class MovieViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Movie.objects.all().prefetch_related(
-        'genres', 'actors', 'directors',
-        Prefetch('type', queryset=Type.objects.all())
-    ).select_related('type').order_by('-created_at')
+class MovieViewSet(MovieAPIMixin, viewsets.ReadOnlyModelViewSet):
 
-    # تغییر در اینجا: استفاده از BaseMovieSerializer به جای MoviePolymorphicSerializer
     serializer_class = BaseMovieSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = {
-        'release_date': ['exact', 'year', 'year__gte', 'year__lte', 'month', 'day'],
-        'type__slug': ['exact', 'in'],
-        'status': ['exact'],
-        'is_dubbed': ['exact'],
-        'is_subtitled': ['exact'],
-        'genres__slug': ['exact', 'in'],
-        'imdb_rating': ['gte', 'lte', 'exact'],
-        'production_country': ['iexact', 'icontains'],
-        'language': ['iexact', 'icontains'],
-    }
     search_fields = ['title', 'description', 'actors__name', 'directors__name', 'imdb_id', 'tmdb_id']
     ordering_fields = ['title', 'release_date', 'imdb_rating', 'created_at', 'tmdb_popularity', 'type__name']
     ordering = ['type__name', '-release_date', 'title']
 
-    def get_queryset(self):
-        qs = super().get_queryset()
 
-        type_slug_param = self.request.query_params.get('type_slug')
-        if type_slug_param:
-            qs = qs.filter(type__slug=type_slug_param.lower())
-
-        movie_type_param = self.request.query_params.get('movie_type')
-        if movie_type_param and not type_slug_param:
-            standardized_movie_type = movie_type_param.lower()
-            if standardized_movie_type == 'movie':
-                qs = qs.filter(type__slug='movie')
-            elif standardized_movie_type == 'series':
-                qs = qs.filter(type__slug='series')
-
-        if not self.request.user.is_staff:
-            qs = qs.filter(status=True)
-        return qs.distinct()
-
-    @action(detail=False, methods=['get'], url_path='type/(?P<type_slug_url>[^/.]+)', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    @action(detail=False, methods=['get'], url_path='type/(?P<slug_url>[^/.]+)', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
     def by_type_slug(self, request, type_slug_url=None):
         """
         لیستی از فیلم‌ها/سریال‌ها را برای یک نوع (type) خاص بر اساس اسلاگ آن نوع از URL برمی‌گرداند.

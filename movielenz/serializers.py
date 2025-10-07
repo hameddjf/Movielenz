@@ -13,7 +13,7 @@ from celebrity.serializers import ActorSerializer, DirectorSerializer
 class GenreSerializer(serializers.ModelSerializer):
     class Meta:
         model = Genre
-        fields = ['id', 'name', 'translated_genre','slug', 'tmdb_id']
+        fields = ['name', 'translated_genre','slug']
         read_only_fields = ['slug']
 
 # --- Base Movie Serializer (non-polymorphic, for specific movie endpoints or as a base) ---
@@ -22,7 +22,7 @@ class TypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Type
-        fields = ['id', 'name', 'slug', 'parent_slug']
+        fields = ['name', 'parent_slug', 'slug']
 
 class BaseMovieSerializer(serializers.ModelSerializer):
     # Read-only fields for related objects (full representation)
@@ -49,15 +49,16 @@ class BaseMovieSerializer(serializers.ModelSerializer):
     class Meta:
         model = Movie 
         fields = [
-            'id', 'title', 'slug', 'status', 'type', 'object_type',
-            'release_date', 'created_at', 'updated_at',
+            'title', 'slug', 'type', 'object_type',
+            'release_date',
             'actors', 'directors', 'description',
-            'imdb_id', 'tmdb_id', 'imdb_rating', 'genres', 'duration',
+            'directors_ids', 'actors_ids',
+            'genres', 'duration',
             'poster', 'trailer', 'production_country', 'language', 'network',
-            'is_dubbed', 'is_subtitled', 'tmdb_user_score', 'tmdb_popularity',
-            'genres_slugs', 'actors_ids', 'directors_ids',
+            'is_dubbed', 'is_subtitled',
+            'genres_slugs',
         ]
-        read_only_fields = ('slug', 'created_at', 'updated_at', 'type', 'object_type')
+        read_only_fields = ('slug', 'type', 'object_type')
         extra_kwargs = {
             field: {'required': False, 'allow_null': True}
             for field in ['release_date', 'description', 'imdb_id', 'tmdb_id', 'imdb_rating',
@@ -81,10 +82,3 @@ class SeriesSerializer(BaseMovieSerializer):
         fields = BaseMovieSerializer.Meta.fields + [ 
             'number_of_seasons', 'episode_count', 'series_status'
         ]
-
-# Polymorphic serializer to automatically choose MovieOnlySerializer or SeriesSerializer
-class MoviePolymorphicSerializer(PolymorphicSerializer):
-    model_serializer_mapping = {
-        Movie: MovieOnlySerializer, 
-        Series: SeriesSerializer
-    }
