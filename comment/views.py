@@ -96,8 +96,8 @@ class CommentViewSet(viewsets.ModelViewSet):
         Args:
             serializer: The serializer instance.
         """
-        # Check if author_id is already in validated_data
-        if 'author_id' not in serializer.validated_data and self.request.user.is_authenticated:
+        # Automatically set author from authenticated user
+        if self.request.user.is_authenticated:
             serializer.save(author=self.request.user)
         else:
             serializer.save()

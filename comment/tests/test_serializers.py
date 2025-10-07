@@ -27,7 +27,6 @@ class TestReactionSerializer:
         assert data['user']['username'] == reaction_like.user.username
         assert data['value'] == 'like'
         assert data['value_display'] == 'Like'
-        # فیلدهای is_like و is_dislike حذف شده‌اند، بنابراین تست آنها نیز حذف می‌شود.
 
     def test_content_type_name_field(self, reaction_like):
         """Test content_type_name field."""

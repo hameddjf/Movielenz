@@ -14,7 +14,7 @@ class IsOwnerOrAdminOrReadOnly(permissions.BasePermission):
     
     This permission class allows:
     - Read access (GET, HEAD, OPTIONS) to all users including anonymous
-    - Write access (POST) to authenticated users and anonymous users
+    - Write access (POST) to all users including anonymous
     - Update/Delete access (PUT, PATCH, DELETE) only to the comment author or admin
     """
 
@@ -29,12 +29,15 @@ class IsOwnerOrAdminOrReadOnly(permissions.BasePermission):
         Returns:
             bool: True if permission is granted, False otherwise.
         """
+        # Allow read access to everyone
         if request.method in permissions.SAFE_METHODS:
             return True
 
+        # Allow POST (create) to everyone
         if request.method == 'POST':
             return True
 
+        # For other methods (PUT, PATCH, DELETE), require authentication
         return request.user and request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
@@ -49,9 +52,11 @@ class IsOwnerOrAdminOrReadOnly(permissions.BasePermission):
         Returns:
             bool: True if permission is granted, False otherwise.
         """
+        # Allow read access to everyone
         if request.method in permissions.SAFE_METHODS:
             return True
 
+        # For modifications, require authentication
         if not request.user or not request.user.is_authenticated:
             return False
 
@@ -81,7 +86,9 @@ class IsAuthenticatedOrCreateOnly(permissions.BasePermission):
         Returns:
             bool: True if permission is granted, False otherwise.
         """
+        # Allow POST to everyone
         if request.method == 'POST':
             return True
 
+        # For other methods, require authentication
         return request.user and request.user.is_authenticated

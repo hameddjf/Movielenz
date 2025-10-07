@@ -73,16 +73,16 @@ class CommentSerializer(serializers.ModelSerializer):
     author information and nested replies.
     """
 
-    author = UserSerializer(read_only=True)
+    # author = UserSerializer(read_only=True)
     replies = serializers.SerializerMethodField()
     reply_count = serializers.IntegerField(read_only=True, source='children.count')
-    depth = serializers.IntegerField(read_only=True, source='level')
+    depth = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
         fields = [
             'id',
-            'author',
+            # 'author',
             'display_name',
             'content_type',
             'object_id',
@@ -96,7 +96,24 @@ class CommentSerializer(serializers.ModelSerializer):
             'reply_count',
             'depth'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'author', 'display_name']
+        read_only_fields = ['id', 'created_at', 'updated_at',  'display_name'
+                            # 'author',
+                            ]
+
+    def get_depth(self, obj):
+        """
+        Get the depth level of the comment.
+        0 = root comment (parent)
+        1 = first level reply
+        2 = second level reply (deepest allowed)
+        
+        Args:
+            obj: Comment instance.
+            
+        Returns:
+            int: Depth level (0, 1, or 2).
+        """
+        return obj.level
 
     def get_replies(self, obj):
         """
@@ -110,10 +127,10 @@ class CommentSerializer(serializers.ModelSerializer):
         Returns:
             list: List of serialized child comments.
         """
-        if obj.level >= MAX_REPLY_DEPTH:
+        if obj.level >= MAX_REPLY_DEPTH - 1:
             return []
 
-        children = obj.children.filter(is_active=True).select_related('author')
+        children = obj.children.filter(is_active=True)#.select_related('author')
         return CommentSerializer(children, many=True, context=self.context).data
 
 
@@ -123,15 +140,16 @@ class CreateCommentSerializer(serializers.ModelSerializer):
     
     This serializer handles comment creation with validation for
     reply depth and parent comment existence.
+    
+    Note: author_id field has been removed. Author is automatically set
+    from the authenticated user or left as None for anonymous comments.
     """
 
-    author_id = serializers.IntegerField(required=False, write_only=True)
     display_name = serializers.CharField(max_length=100, required=True, allow_blank=False)
 
     class Meta:
         model = Comment
         fields = [
-            'author_id',
             'display_name',
             'content_type',
             'object_id',
@@ -164,6 +182,7 @@ class CreateCommentSerializer(serializers.ModelSerializer):
                 "Cannot reply to an inactive comment."
             )
 
+        # Ensure maximum depth is not exceeded
         if value.level >= MAX_REPLY_DEPTH - 1:
             return value.parent
 
@@ -231,23 +250,16 @@ class CreateCommentSerializer(serializers.ModelSerializer):
         """
         Create a new comment instance.
         
+        Author is automatically set from request.user in the view.
+        
         Args:
             validated_data: Validated data dictionary.
             
         Returns:
             Comment: Created comment instance.
         """
-        author_id = validated_data.pop('author_id', None)
-        
-        # Set author from author_id if provided
-        if author_id:
-            try:
-                author = User.objects.get(pk=author_id)
-                validated_data['author'] = author
-            except User.DoesNotExist:
-                pass
-        
         return Comment.objects.create(**validated_data)
+
 
 class UpdateCommentSerializer(serializers.ModelSerializer):
     """
@@ -305,16 +317,16 @@ class CommentListSerializer(serializers.ModelSerializer):
     with their direct replies (not nested further).
     """
 
-    author = UserSerializer(read_only=True)
+    # author = UserSerializer(read_only=True)
     replies = serializers.SerializerMethodField()
     reply_count = serializers.IntegerField(read_only=True, source='children.count')
-    depth = serializers.IntegerField(read_only=True, source='level')
+    depth = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
         fields = [
             'id',
-            'author',
+            # 'author',
             'display_name',
             'text',
             'is_active',
@@ -328,6 +340,21 @@ class CommentListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_depth(self, obj):
+        """
+        Get the depth level of the comment.
+        0 = root comment (parent)
+        1 = first level reply
+        2 = second level reply (deepest allowed)
+        
+        Args:
+            obj: Comment instance.
+            
+        Returns:
+            int: Depth level (0, 1, or 2).
+        """
+        return obj.level
+
     def get_replies(self, obj):
         """
         Get direct replies for this comment.
@@ -338,6 +365,6 @@ class CommentListSerializer(serializers.ModelSerializer):
             # Don't show replies for reply comments in list view
             return []
         
-        children = obj.children.filter(is_active=True).select_related('author')
+        children = obj.children.filter(is_active=True)#.select_related('author')
         # Use CommentSerializer for nested replies to get full structure
         return CommentSerializer(children, many=True, context=self.context).data

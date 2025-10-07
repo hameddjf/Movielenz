@@ -243,3 +243,37 @@ class TestCommentManager:
         
         assert root_comment in root_comments
         assert reply_comment not in root_comments
+        
+    def test_comment_depth_levels(self, user, content_type):
+        """Test that comment depth levels are correctly set."""
+        # Root comment - depth should be 0
+        level_0 = Comment.objects.create(
+            author=user,
+            content_type=content_type,
+            object_id=user.id,
+            display_name='User',
+            text='Root comment'
+        )
+        assert level_0.level == 0
+        
+        # First reply - depth should be 1
+        level_1 = Comment.objects.create(
+            author=user,
+            content_type=content_type,
+            object_id=user.id,
+            parent=level_0,
+            display_name='User',
+            text='First level reply'
+        )
+        assert level_1.level == 1
+        
+        # Second reply - depth should be 2
+        level_2 = Comment.objects.create(
+            author=user,
+            content_type=content_type,
+            object_id=user.id,
+            parent=level_1,
+            display_name='User',
+            text='Second level reply'
+        )
+        assert level_2.level == 2
