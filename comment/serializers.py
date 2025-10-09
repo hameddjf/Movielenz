@@ -368,3 +368,52 @@ class CommentListSerializer(serializers.ModelSerializer):
         children = obj.children.filter(is_active=True)#.select_related('author')
         # Use CommentSerializer for nested replies to get full structure
         return CommentSerializer(children, many=True, context=self.context).data
+    
+class BulkActionSerializer(serializers.Serializer):
+    """
+    Serializer for bulk activate/deactivate actions.
+    
+    This serializer accepts either a single comment_id or a list of comment_ids.
+    """
+    
+    comment_id = serializers.IntegerField(required=False, help_text="Single comment ID to activate/deactivate")
+    comment_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="List of comment IDs to activate/deactivate"
+    )
+    
+    def validate(self, attrs):
+        """
+        Validate that at least one of comment_id or comment_ids is provided.
+        If comment_id is provided, convert it to comment_ids list.
+        """
+        comment_id = attrs.get('comment_id')
+        comment_ids = attrs.get('comment_ids')
+        
+        if not comment_id and not comment_ids:
+            raise serializers.ValidationError(
+                "Either 'comment_id' or 'comment_ids' must be provided."
+            )
+        
+        # Convert single ID to list
+        if comment_id and not comment_ids:
+            attrs['comment_ids'] = [comment_id]
+        elif comment_id and comment_ids:
+            # If both provided, add comment_id to comment_ids if not already there
+            if comment_id not in comment_ids:
+                attrs['comment_ids'].append(comment_id)
+        
+        # Remove comment_id from final data as we only use comment_ids
+        attrs.pop('comment_id', None)
+        
+        # Validate that comment_ids is not empty and contains valid integers
+        if not attrs.get('comment_ids'):
+            raise serializers.ValidationError("comment_ids cannot be empty.")
+        
+        # Check for duplicates
+        comment_ids_list = attrs['comment_ids']
+        if len(comment_ids_list) != len(set(comment_ids_list)):
+            raise serializers.ValidationError("Duplicate comment IDs found.")
+        
+        return attrs
