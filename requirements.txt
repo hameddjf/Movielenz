@@ -58,3 +58,4 @@ typing_extensions==4.13.2
 tzdata==2025.2
 uritemplate==4.1.1
 urllib3==2.4.0
+pytest_django==4.11.1
