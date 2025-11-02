@@ -1,170 +1,284 @@
+"""
+Django admin configuration for user management.
+Provides comprehensive interface for managing users and their interactions.
+"""
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.utils.html import format_html
 from django.urls import reverse
+from django.db.models import Count, Q
+from django.utils import timezone
 
 from .models import User, WatchlistItem, FavoriteItem, RecentlyWatchedItem
+from .enums import SubscriptionStatus, UserRole
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ('email', 'get_full_name', 'role', 'activated', 'is_staff_display', 
-                    'is_superuser_display','subscription_status', 'has_active_premium_subscription_display',  'date_joined')
+    """
+    Custom admin interface for User model.
+    """
     
-    list_filter = ('activated',  'groups', 'subscription_status', 'preferred_language', 'role', 'date_joined')
-    
-    search_fields = ('email', 'first_name', 'last_name')
-    filter_horizontal = ('groups', 'user_permissions', 'preferred_genres')
-    ordering = ('email','activated')
-    
-    actions = ['activate_users', 'deactivate_users', 'grant_premium']
-
-    def activate_users(self, request, queryset):
-        queryset.update(activated=True)
-    activate_users.short_description = "فعال‌سازی حساب کاربران انتخاب شده"
-
-    def deactivate_users(self, request, queryset):
-        queryset.update(activated=False)
-    deactivate_users.short_description = "غیرفعال‌سازی حساب کاربران انتخاب شده"
-
-    def grant_premium(self, request, queryset):
-        from datetime import timedelta
-        from django.utils import timezone
-        end_date = timezone.now() + timedelta(days=30)
-        queryset.update(
-            subscription_status='PREMIUM',
-            subscription_start_date=timezone.now(),
-            subscription_end_date=end_date
-        )
-    grant_premium.short_description = "اعطای اشتراک ویژه ۳۰ روزه"
-    
-    fieldsets = (
-        (None, {'fields': ('email', 'password')}),
-        (_('اطلاعات شخصی'), {'fields': ("username",'first_name',"last_name", 'profile_picture_display', 'profile_picture', 'date_of_birth')}),
-        (_('وضعیت اشتراک'), {'fields': ('subscription_status', 'subscription_start_date', 'subscription_end_date')}),
-        (_('تنظیمات برگزیده'), {'fields': ('preferred_language', 'preferred_genres')}),
-        (_('دسترسی‌ها'), {
-            'fields': ('activated','role', ('is_staff_display', 'is_superuser_display'), 'groups', 'user_permissions'),
-                    
-        }),
-        (_('تاریخ‌های مهم'), {'fields': ('last_login', 'date_joined')}),
+    # List display configuration
+    list_display = (
+        'email', 'get_full_name_display', 'role', 'subscription_badge',
+        'activated', 'is_active', 'date_joined_formatted'
     )
-    readonly_fields = ('last_login', 'date_joined', 'profile_picture_display' , 'is_staff_display', 'is_superuser_display')
-
+    list_filter = (
+        'role', 'subscription_status', 'activated', 'is_active',
+        'date_joined', 'last_login'
+    )
+    search_fields = ('email', 'first_name', 'last_name')
+    ordering = ('-date_joined',)
+    
+    # Fieldsets for detail view
+    fieldsets = (
+        (None, {
+            'fields': ('email', 'password')
+        }),
+        (_('Personal Information'), {
+            'fields': ('first_name', 'last_name', 'date_of_birth', 'profile_picture')
+        }),
+        (_('Subscription'), {
+            'fields': (
+                'subscription_status', 'subscription_start_date',
+                'subscription_end_date'
+            )
+        }),
+        (_('Preferences'), {
+            'fields': ('preferred_language', 'preferred_genres')
+        }),
+        (_('Permissions'), {
+            'fields': ('role', 'activated', 'is_active', 'is_superuser')
+        }),
+        (_('Important Dates'), {
+            'fields': ('last_login', 'date_joined')
+        }),
+    )
+    
+    # Fieldsets for add form
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'password', 'password2'),
+            'fields': (
+                'email', 'password1', 'password2', 'first_name',
+                'last_name', 'role'
+            ),
         }),
     )
-    def profile_picture_display(self, obj):
-        if obj.profile_picture:
-            return format_html('<img src="{}" width="150" height="auto" />', obj.profile_picture.url)
-        return _("عکسی آپلود نشده است")
-    profile_picture_display.short_description = _("نمایش عکس پروفایل")
     
-    def is_staff_display(self, obj):
-        return obj.is_staff
-    is_staff_display.boolean = True
-    is_staff_display.short_description = _('Staff status')
-
-    def is_superuser_display(self, obj):
-        return obj.is_superuser
-    is_superuser_display.boolean = True
-    is_superuser_display.short_description = _('Superuser status')
-
-    def has_active_premium_subscription_display(self, obj):
-        return obj.has_active_premium_subscription()
-    has_active_premium_subscription_display.boolean = True
-    has_active_premium_subscription_display.short_description = _("اشتراک ویژه فعال")
-
-
-class UserContentInteractionAdminBase(admin.ModelAdmin):
-    list_display = ('user_link', 'content_object_link', 'content_type', 'added_at')
-    list_filter = ('user', 'content_type', 'added_at')
-    search_fields = ('user__email', 'object_id')
-    # readonly_fields = ('user', 'content_type', 'object_id', 'content_object', 'added_at')
-
-    def user_link(self, obj):
-        link = reverse("admin:user_account_user_change", args=[obj.user.id])
-        return format_html('<a href="{}">{}</a>', link, obj.user.email)
-    user_link.short_description = _("کاربر")
-    user_link.admin_order_field = 'user'
-
-    def content_object_link(self, obj):
-        if obj.content_object:
-            app_label = obj.content_type.app_label
-            model_name = obj.content_type.model
-            try:
-                link = reverse(f"admin:{app_label}_{model_name}_change", args=[obj.object_id])
-                return format_html('<a href="{}">{} ({})</a>', link, str(obj.content_object), obj.content_type.name)
-            except Exception:
-                return f"{str(obj.content_object)} ({obj.content_type.name})"
-        return _("محتوا موجود نیست")
-    content_object_link.short_description = _("محتوا فیلم")
-
-    # def has_add_permission(self, request):
-    #     return False 
-
-    # def has_change_permission(self, request, obj=None):
-    #     return False
-
-    def has_delete_permission(self, request, obj=None):
-        return True
+    # Read-only fields
+    readonly_fields = ('date_joined', 'last_login')
+    
+    # Filter horizontal for many-to-many
+    filter_horizontal = ('preferred_genres',)
+    
+    # Actions
+    actions = [
+        'activate_users', 'deactivate_users', 'activate_premium',
+        'cancel_subscriptions', 'send_verification_email'
+    ]
+    
+    # Custom methods for list display
+    @admin.display(description='نام کامل')
+    def get_full_name_display(self, obj):
+        """Display user's full name."""
+        return obj.get_full_name() or '-'
+    
+    @admin.display(description='اشتراک')
+    def subscription_badge(self, obj):
+        """Display subscription status with color badge."""
+        colors = {
+            SubscriptionStatus.FREE: 'gray',
+            SubscriptionStatus.PREMIUM: 'green',
+            SubscriptionStatus.CANCELLED: 'orange',
+            SubscriptionStatus.EXPIRED: 'red',
+        }
+        color = colors.get(obj.subscription_status, 'gray')
+        
+        label = obj.get_subscription_status_display()
+        
+        # Add expiry info for premium
+        if obj.subscription_status == SubscriptionStatus.PREMIUM and obj.subscription_end_date:
+            if obj.subscription_end_date < timezone.now():
+                color = 'red'
+                label += ' (منقضی شده)'
+            elif obj.subscription_end_date < timezone.now() + timezone.timedelta(days=7):
+                color = 'orange'
+                label += ' (در شرف انقضا)'
+        
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color, label
+        )
+    
+    @admin.display(description='تاریخ عضویت', ordering='date_joined')
+    def date_joined_formatted(self, obj):
+        """Format join date."""
+        return obj.date_joined.strftime('%Y-%m-%d %H:%M')
+    
+    # Custom actions
+    @admin.action(description='فعال‌سازی کاربران انتخاب شده')
+    def activate_users(self, request, queryset):
+        """Activate selected users."""
+        updated = queryset.update(is_active=True, activated=True)
+        self.message_user(request, f'{updated} کاربر فعال شد.')
+    
+    @admin.action(description='غیرفعال‌سازی کاربران انتخاب شده')
+    def deactivate_users(self, request, queryset):
+        """Deactivate selected users."""
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'{updated} کاربر غیرفعال شد.')
+    
+    @admin.action(description='فعال‌سازی اشتراک پرمیوم (30 روز)')
+    def activate_premium(self, request, queryset):
+        """Activate premium subscription for selected users."""
+        count = 0
+        for user in queryset:
+            user.activate_premium_subscription(duration_days=30)
+            count += 1
+        self.message_user(request, f'اشتراک {count} کاربر فعال شد.')
+    
+    @admin.action(description='لغو اشتراک کاربران انتخاب شده')
+    def cancel_subscriptions(self, request, queryset):
+        """Cancel subscriptions for selected users."""
+        updated = queryset.update(subscription_status=SubscriptionStatus.CANCELLED)
+        self.message_user(request, f'اشتراک {updated} کاربر لغو شد.')
+    
+    @admin.action(description='ارسال ایمیل تأیید')
+    def send_verification_email(self, request, queryset):
+        """Send verification email to unverified users."""
+        # This would need implementation with email backend
+        unverified = queryset.filter(activated=False)
+        count = unverified.count()
+        self.message_user(
+            request,
+            f'ایمیل تأیید برای {count} کاربر ارسال شد.'
+        )
+    
+    def get_queryset(self, request):
+        """Optimize queryset with prefetch."""
+        qs = super().get_queryset(request)
+        return qs.prefetch_related('preferred_genres')
 
 
 @admin.register(WatchlistItem)
-class WatchlistItemAdmin(UserContentInteractionAdminBase):
-    pass
+class WatchlistItemAdmin(admin.ModelAdmin):
+    """Admin interface for watchlist items."""
+    
+    list_display = (
+        'user_email', 'content_type', 'object_id',
+        'content_link', 'added_at_formatted'
+    )
+    list_filter = ('content_type', 'added_at')
+    search_fields = ('user__email', 'object_id')
+    date_hierarchy = 'added_at'
+    readonly_fields = ('added_at',)
+    
+    @admin.display(description='ایمیل کاربر')
+    def user_email(self, obj):
+        """Display user email with link."""
+        url = reverse('admin:accounts_user_change', args=[obj.user.id])
+        return format_html('<a href="{}">{}</a>', url, obj.user.email)
+    
+    @admin.display(description='محتوا')
+    def content_link(self, obj):
+        """Display content object name."""
+        if obj.content_object:
+            return str(obj.content_object)
+        return '-'
+    
+    @admin.display(description='تاریخ افزودن', ordering='added_at')
+    def added_at_formatted(self, obj):
+        """Format added date."""
+        return obj.added_at.strftime('%Y-%m-%d %H:%M')
+    
+    def get_queryset(self, request):
+        """Optimize queryset."""
+        qs = super().get_queryset(request)
+        return qs.select_related('user', 'content_type')
 
 
 @admin.register(FavoriteItem)
-class FavoriteItemAdmin(UserContentInteractionAdminBase):
-    pass
+class FavoriteItemAdmin(admin.ModelAdmin):
+    """Admin interface for favorite items."""
+    
+    list_display = (
+        'user_email', 'content_type', 'object_id',
+        'content_link', 'added_at_formatted'
+    )
+    list_filter = ('content_type', 'added_at')
+    search_fields = ('user__email', 'object_id')
+    date_hierarchy = 'added_at'
+    readonly_fields = ('added_at',)
+    
+    @admin.display(description='ایمیل کاربر')
+    def user_email(self, obj):
+        """Display user email with link."""
+        url = reverse('admin:accounts_user_change', args=[obj.user.id])
+        return format_html('<a href="{}">{}</a>', url, obj.user.email)
+    
+    @admin.display(description='محتوا')
+    def content_link(self, obj):
+        """Display content object name."""
+        if obj.content_object:
+            return str(obj.content_object)
+        return '-'
+    
+    @admin.display(description='تاریخ افزودن', ordering='added_at')
+    def added_at_formatted(self, obj):
+        """Format added date."""
+        return obj.added_at.strftime('%Y-%m-%d %H:%M')
+    
+    def get_queryset(self, request):
+        """Optimize queryset."""
+        qs = super().get_queryset(request)
+        return qs.select_related('user', 'content_type')
 
 
 @admin.register(RecentlyWatchedItem)
 class RecentlyWatchedItemAdmin(admin.ModelAdmin):
-    list_display = ('user_link', 'content_object_link', 'watched_at', 'progress_seconds_display')
-    list_filter = ('user', 'content_type', 'watched_at')
+    """Admin interface for recently watched items."""
+    
+    list_display = (
+        'user_email', 'content_type', 'object_id',
+        'content_link', 'progress_display', 'watched_at_formatted'
+    )
+    list_filter = ('content_type', 'watched_at')
     search_fields = ('user__email', 'object_id')
-    readonly_fields = ('user', 'content_type', 'object_id', 'content_object', 'watched_at', 'progress_seconds')
-    ordering = ('-watched_at',)
-
-    def user_link(self, obj):
-        link = reverse("admin:accounts_user_change", args=[obj.user.id])
-        return format_html('<a href="{}">{}</a>', link, obj.user.email)
-    user_link.short_description = _("کاربر")
-    user_link.admin_order_field = 'user'
-
-    def content_object_link(self, obj):
+    date_hierarchy = 'watched_at'
+    readonly_fields = ('watched_at',)
+    
+    @admin.display(description='ایمیل کاربر')
+    def user_email(self, obj):
+        """Display user email with link."""
+        url = reverse('admin:accounts_user_change', args=[obj.user.id])
+        return format_html('<a href="{}">{}</a>', url, obj.user.email)
+    
+    @admin.display(description='محتوا')
+    def content_link(self, obj):
+        """Display content object name."""
         if obj.content_object:
-            app_label = obj.content_type.app_label
-            model_name = obj.content_type.model
-            try:
-                link = reverse(f"admin:{app_label}_{model_name}_change", args=[obj.object_id])
-                return format_html('<a href="{}">{} ({})</a>', link, str(obj.content_object), obj.content_type.name)
-            except Exception:
-                return f"{str(obj.content_object)} ({obj.content_type.name})"
-        return _("محتوا موجود نیست")
-    content_object_link.short_description = _("محتوا فیلم")
-
-    def progress_seconds_display(self, obj):
-        if obj.progress_seconds is not None:
-            minutes, seconds = divmod(obj.progress_seconds, 60)
-            hours, minutes = divmod(minutes, 60)
-            if hours > 0:
-                return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            return f"{minutes:02d}:{seconds:02d}"
-        return _("N/A")
-    progress_seconds_display.short_description = _("پیشرفت تماشا")
-
-    # def has_add_permission(self, request):
-    #     return False
-
-    # def has_change_permission(self, request, obj=None):
-    #     return False
-
-    def has_delete_permission(self, request, obj=None):
-        return True
+            return str(obj.content_object)
+        return '-'
+    
+    @admin.display(description='پیشرفت')
+    def progress_display(self, obj):
+        """Display watch progress."""
+        if obj.progress_seconds:
+            minutes = obj.progress_seconds // 60
+            seconds = obj.progress_seconds % 60
+            return f'{minutes}:{seconds:02d}'
+        return '-'
+    
+    @admin.display(description='زمان مشاهده', ordering='watched_at')
+    def watched_at_formatted(self, obj):
+        """Format watched date."""
+        return obj.watched_at.strftime('%Y-%m-%d %H:%M')
+    
+    def get_queryset(self, request):
+        """Optimize queryset."""
+        qs = super().get_queryset(request)
+        return qs.select_related('user', 'content_type')

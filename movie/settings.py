@@ -14,6 +14,7 @@ from pathlib import Path
 # import dj_database_url  / not installed
 import os
 from datetime import timedelta
+import datetime
 
 # تغییر ugettext_lazy به gettext_lazy
 # from django.utils import translation
@@ -95,26 +96,31 @@ INSTALLED_APPS = [
     "rest_framework",
     "mptt",
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'drf_spectacular',
     'corsheaders',
     'polymorphic',       
     'drf_polymorphic',
     'django_filters',
     'pytest_django',
+    'social_django',
+    'model_utils',
 ]
 
 MIDDLEWARE = [
     'debug_toolbar.middleware.DebugToolbarMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # CORS Middleware
     'django.middleware.security.SecurityMiddleware',
-    'allauth.account.middleware.AccountMiddleware',
+    'allauth.account.middleware.AccountMiddleware', # Allauth Middleware
     # 'whitenoise.middleware.WhiteNoiseMiddleware',
+    'social_django.middleware.SocialAuthExceptionMiddleware', # Social Auth Middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'user_account.middleware.JWTSecurityMiddleware', # Custom JWT security middleware
 ]
 
 ROOT_URLCONF = 'movie.urls'
@@ -176,6 +182,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        'NAME': 'user_account.validators.StrongPasswordValidator',
+    },
 ]
 
 
@@ -210,53 +219,276 @@ else:
     SECURE_HSTS_SECONDS = 3600  # 1 hour
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-    # SECURE_BROWSER_XSS_FILTER = True # این دیگر توصیه نمی‌شود
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    CSRF_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_SECURE = not DEBUG
+    CSRF_COOKIE_SAMESITE = 'Strict'
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Strict'
+    CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    ]
+
+    CORS_ALLOW_CREDENTIALS = True
     X_FRAME_OPTIONS = 'DENY'
     print(f"settings.py: DEBUG is False. SECURE_SSL_REDIRECT = {SECURE_SSL_REDIRECT}")
 
 print("------------------------------------")
+def ensure_log_file_writable(log_path):
+    """اطمینان از امکان نوشتن در فایل لاگ"""
+    try:
+        log_dir = os.path.dirname(log_path)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        # تست نوشتن
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(f"Log initialized at {datetime.now()}\n")
+        print(f"✓ Log file writable: {log_path}")
+        return True
+    except Exception as e:
+        print(f"✗ Cannot write to log file {log_path}: {e}")
+        return False
 
+jwt_log_path = os.path.join(BASE_DIR, 'logs', 'jwt_tokens.log')
+general_log_path = os.path.join(BASE_DIR, 'logs', 'general.log')
+
+ensure_log_file_writable(jwt_log_path)
+ensure_log_file_writable(general_log_path)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {asctime} {message}',
+            'style': '{',
         },
     },
-    'root': {
+    'handlers': {
+        'jwt_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'jwt_tokens.log'),
+            'formatter': 'verbose',
+            'encoding': 'utf-8', 
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file_general': { 
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'general.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+    },
+    'loggers': {
+        'jwt_tokens': {
+            'handlers': ['jwt_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console', 'file_general'],
+            'level': 'INFO', 
+            'propagate': False,
+        },
+        'accounts': {
+            'handlers': ['console', 'file_general'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'user_account': { 
+            'handlers': ['console', 'file_general'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+    'root': { 
         'handlers': ['console'],
         'level': 'WARNING',
     },
 }
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
+    print(f"✓ Created logs directory at: {LOGS_DIR}")
+else:
+    print(f"✓ Logs directory exists at: {LOGS_DIR}")
+
+# logging test
+import logging
+logger = logging.getLogger('jwt_tokens')
+logger.info("=" * 50)
+logger.info("Django settings loaded successfully")
+logger.info(f"DEBUG mode: {DEBUG}")
+logger.info(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+logger.info("=" * 50)
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1000), 
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1000), 
+    # Token Lifetimes
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1), 
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7), 
+    
+    # Rotation & Blacklist
     'ROTATE_REFRESH_TOKENS': True, 
     'BLACKLIST_AFTER_ROTATION': True,
-    'AUTH_HEADER_TYPES': ('Bearer',), 
+    'UPDATE_LAST_LOGIN': True,
+    
+    # Token Types
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'JTI_CLAIM': 'jti',
+    
+    # Signing
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    
+    # Custom Claims
+    'TOKEN_OBTAIN_SERIALIZER': 'accounts.serializers.CustomTokenObtainPairSerializer',
+    'TOKEN_REFRESH_SERIALIZER': 'accounts.serializers.CustomTokenRefreshSerializer',
+    'TOKEN_VERIFY_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenVerifySerializer',
+    'TOKEN_BLACKLIST_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenBlacklistSerializer',
+    
+    # Headers
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    
+    # Token Validation
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
+    
+    # Sliding Tokens (Disabled - we use Access/Refresh)
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
-
 REST_FRAMEWORK = {
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 20,
+    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+    'DEFAULT_VERSION': 'v1',
+    'ALLOWED_VERSIONS': ['v1', 'v2'],
+    'VERSION_PARAM': 'version',
+    
+    # Authentication
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication', 
-        # 'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication', 
     ],
+    # Permissions
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ],
+    # Pagination
+    # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'user_account.pagination.StandardResultsSetPagination',
+    'PAGE_SIZE': 20,
+    # Throttling
+    'DEFAULT_THROTTLE_CLASSES': [
+        'user_account.throttling.BurstRateThrottle',
+        'user_account.throttling.SustainedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'burst': '60/min',
+        'sustained': '1000/day',
+        'login_attempts': '5/hour',
+        'register': '3/hour',
+        'password_reset': '3/hour',
+        'email_verification': '5/hour',
+        'social_auth': '10/hour',
+        'premium_user': '2000/day',
+        'watchlist': '100/hour',
+        'favorite': '100/hour',
+    },
+    
+    # Exception Handling
+    'EXCEPTION_HANDLER': 'user_account.exceptions.custom_exception_handler',
+    # Schema
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Filtering
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',
         'rest_framework.filters.SearchFilter',
     ],
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Renderer
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+    
+    # Parser
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+    ],
+}
+REST_AUTH = {
+    'USE_JWT': True,
+    'JWT_AUTH_COOKIE': None,
+    'JWT_AUTH_REFRESH_COOKIE': None,
+    'JWT_AUTH_HTTPONLY': False,
+    
+    'USER_DETAILS_SERIALIZER': 'user_account.serializers.UserProfileSerializer',
+    'LOGIN_SERIALIZER': 'user_account.serializers.CustomLoginSerializer',
+    'REGISTER_SERIALIZER': 'user_account.serializers.CustomRegisterSerializer',
+    
+    'PASSWORD_RESET_SERIALIZER': 'dj_rest_auth.serializers.PasswordResetSerializer',
+    'PASSWORD_RESET_CONFIRM_SERIALIZER': 'user_account.serializers.CustomPasswordResetConfirmSerializer',
+    'PASSWORD_RESET_CONFIRM_URL': "password/reset/confirm/{uidb64}/{token}/",
+    # 'PASSWORD_RESET_CONFIRM_URL': "/api/user/password/reset/confirm/{uidb64}/{token}/",
+    
+    'SESSION_LOGIN': False,
+}
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+    }
+    # 'default': {
+    #     'BACKEND': 'django_redis.cache.RedisCache',
+    #     'LOCATION': os.getenv('REDIS_URL', default='redis://127.0.0.1:6379/1'),
+    #     'OPTIONS': {
+    #         'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+    #     }
+    # }
 }
 
+# Use local memory cache in production
+if DEBUG:
+    print("settings.py: Using LocMemCache for development.")
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+        }
+    }
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    print("settings.py: Using RedisCache for production.")
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1'),
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            }
+        }
+    }
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Comment API Documentation',
     'DESCRIPTION': 'A comprehensive API for the comment system.',
@@ -275,7 +507,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # smtp email
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
@@ -284,6 +516,19 @@ EMAIL_HOST_USER = "hameddjf106@gmail.com"
 EMAIL_HOST_PASSWORD = "horx cvwb jgex rmrj"
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
+
+# in production
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# تنظیمات آپلود فایل
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5 MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5 MB
+
 # ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 ACCOUNT_EMAIL_VERIFICATION = 'none'
 DEFAULT_FROM_EMAIL = 'MovieLenz Support <movielenz.com>'
@@ -292,20 +537,60 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 
 
 
-REST_AUTH = {
-    # 'LOGIN_SERIALIZER': 'user_account.serializers.CustomLoginSerializer',
-    'REGISTER_SERIALIZER': 'user_account.serializers.CustomRegisterSerializer',
-    'USE_JWT': True,
-    'JWT_AUTH_HTTPONLY': False,
-    'PASSWORD_RESET_CONFIRM_URL': "/api/user/password/reset/confirm/{uidb64}/{token}/",
-}
+
 
 # login with account
+SOCIAL_AUTH_TWITTER_KEY='P7iIAtjrB7vxfU2KgrAwdGdfv'
+SOCIAL_AUTH_TWITTER_SECRET='9txc2ZOJJlQL4Brp0A0iFQDH7LU3FX9RWQN8aob9G6XfGPJQpr'
 
-SITE_ID = 1 # برای کارکرد django.contrib.sites
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '458871505588-22jp4qkvha2t5451ub8k8ejb6ab0rn4a.apps.googleusercontent.com'
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = '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'
+
+SITE_ID = 1
+LOGIN_REDIRECT_URL='dashboard'
+LOGIN_URL='login'
+LOGOUT_URL='logout'
+
+SOCIAL_AUTH_PIPELINE = (
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.user.create_user',
+    'user_account.pipeline.activate_user', 
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+)
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        },
+        'OAUTH_PKCE_ENABLED': True,
+    },
+    'twitter': {
+        'SCOPE': [
+            'email',
+        ],
+    }
+}
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email', 'profile']
+SOCIAL_AUTH_TWITTER_SCOPE = ['email']
+
+# تنظیمات User model برای social auth
+SOCIAL_AUTH_USER_MODEL = 'user_account.User'
+SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL = True
 
 # برای اینکه جنگو بداند هم با ایمیل لاگین کند و هم از طریق شبکه‌های اجتماعی
 AUTHENTICATION_BACKENDS = (
+    'social_core.backends.twitter.TwitterOAuth',
+    'social_core.backends.google.GoogleOAuth2',
     'allauth.account.auth_backends.AuthenticationBackend',
     'django.contrib.auth.backends.ModelBackend',
 )
@@ -346,12 +631,6 @@ JAZZMIN_SETTINGS = {
 
 # token (access / refresh)
 
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-}
+
 
 CORS_ALLOW_ALL_ORIGINS = True
